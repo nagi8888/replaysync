@@ -1,0 +1,400 @@
+<!DOCTYPE html>
+<html lang="ja">
+
+<head>
+	<meta charset="UTF-8">
+	<title>Sync Player - Final Fixed Edition</title>
+	<script src="https://cdn.jsdelivr.net/npm/interactjs/dist/interact.min.js"></script>
+	<style>
+		body {
+			font-family: sans-serif;
+			background: #000;
+			color: white;
+			margin: 0;
+			overflow: hidden;
+			height: 100vh;
+		}
+
+		#setup-screen {
+			padding: 20px;
+			max-width: 500px;
+			margin: 10vh auto;
+			background: #222;
+			border-radius: 12px;
+			position: relative;
+			z-index: 4000;
+			box-shadow: 0 0 30px rgba(0, 0, 0, 0.5);
+		}
+
+		.input-group {
+			margin-bottom: 10px;
+			display: grid;
+			grid-template-columns: 60px 1fr 70px;
+			gap: 8px;
+			align-items: center;
+		}
+
+		input {
+			padding: 8px;
+			border-radius: 4px;
+			border: 1px solid #444;
+			background: #111;
+			color: #fff;
+		}
+
+		#player-screen {
+			display: none;
+			width: 100vw;
+			height: 100vh;
+			position: relative;
+		}
+
+		/* 中央ズーム(ミニマップ)動画 */
+		#center-zoom-container {
+			position: absolute;
+			aspect-ratio: 16 / 9;
+			background: #000;
+			overflow: hidden;
+			z-index: 5;
+			border: 1px solid #333;
+			box-shadow: 0 0 50px rgba(0, 0, 0, 0.9);
+			pointer-events: none;
+		}
+
+		#center-zoom-container iframe {
+			width: 250%;
+			height: 250%;
+			position: absolute;
+			top: 0;
+			left: 0;
+		}
+
+		/* 5つの動画ボックス */
+		.video-box {
+			position: absolute;
+			background: #111;
+			border: 1px solid #333;
+			box-sizing: border-box;
+			touch-action: none;
+			display: flex;
+			flex-direction: column;
+			z-index: 10;
+			overflow: hidden;
+			user-select: none;
+		}
+
+		.video-box.active {
+			border-color: #ff0000;
+			z-index: 500 !important;
+		}
+
+		.video-header {
+			background: #222;
+			padding: 0 10px;
+			display: flex;
+			justify-content: space-between;
+			align-items: center;
+			font-size: 11px;
+			height: 24px;
+			cursor: move;
+		}
+
+		.mute-toggle {
+			cursor: pointer;
+			background: #444;
+			border: none;
+			color: white;
+			padding: 2px 6px;
+			border-radius: 3px;
+			font-size: 9px;
+			pointer-events: auto;
+		}
+
+		.mute-toggle.on {
+			background: #cc0000;
+		}
+
+		.video-box iframe {
+			width: 100%;
+			flex-grow: 1;
+			pointer-events: none;
+			border: none;
+		}
+
+		/* コントロールUI */
+		.controls {
+			position: fixed;
+			bottom: 20px;
+			left: 50%;
+			transform: translateX(-50%) translateY(100px);
+			background: rgba(20, 20, 20, 0.95);
+			padding: 12px 24px;
+			display: flex;
+			align-items: center;
+			gap: 20px;
+			z-index: 2000;
+			border-radius: 50px;
+			border: 1px solid #444;
+			backdrop-filter: blur(10px);
+			transition: transform 0.3s, opacity 0.3s;
+			opacity: 0;
+		}
+
+		.controls.visible {
+			transform: translateX(-50%) translateY(0);
+			opacity: 1;
+		}
+
+		.control-group {
+			display: flex;
+			flex-direction: column;
+			align-items: center;
+			gap: 2px;
+		}
+
+		#seekbar {
+			width: 350px;
+		}
+
+		#volume-slider {
+			width: 100px;
+		}
+
+		button {
+			cursor: pointer;
+			padding: 8px 16px;
+			border-radius: 20px;
+			border: none;
+			font-weight: bold;
+			background: #333;
+			color: white;
+		}
+
+		#play-btn {
+			background: #ff0000;
+		}
+
+		.start-btn {
+			background: #ff0000;
+			border-radius: 4px;
+			width: 100%;
+			margin-top: 15px;
+		}
+	</style>
+</head>
+
+<body>
+
+	<div id="setup-screen">
+		<h3 style="margin-top:0;">動画同期設定</h3>
+		<div id="inputs"></div>
+		<button class="start-btn" onclick="startApp()">プレイヤーを表示</button>
+	</div>
+
+	<div id="player-screen">
+		<div id="center-zoom-container">
+			<div id="yt-player-zoom"></div>
+		</div>
+		<div id="controls-bar" class="controls">
+			<button id="play-btn" onclick="togglePlay()">再生</button>
+			<div class="control-group">
+				<input type="range" id="seekbar" value="0" step="0.1">
+				<span id="time-display" style="font-size:11px; font-family: monospace; color: #aaa;">00:00</span>
+			</div>
+			<div class="control-group">
+				<label style="font-size:8px; color:#888;">VOL</label>
+				<input type="range" id="volume-slider" min="0" max="100" value="50">
+        </div>
+				<button onclick="backToSetup()" style="font-size: 11px;">設定に戻る</button>
+			</div>
+		</div>
+
+		<script>
+			let players = [];
+    let zoomPlayer = null;
+    let offsets = [];
+    let isPlaying = false;
+    let globalVolume = 50;
+    let hideTimeout;
+
+    // 設定に戻る関数
+    function backToSetup() {
+        if(confirm("設定画面に戻りますか？現在の配置はリセットされます。")) {
+            window.location.reload();
+        }
+    }
+
+    const inputs = document.getElementById('inputs');
+    for (let i = 0; i < 5; i++) {
+        inputs.innerHTML += `
+            <div class="input-group">
+                <span style="font-size:12px;">動画${i+1}</span>
+                <input type="text" class="url" placeholder="URLを入力" value="">
+                <input type="number" class="time" value="0">
+            </div>`;
+    }
+
+    const tag = document.createElement('script');
+    tag.src = "https://www.youtube.com/iframe_api";
+    document.head.appendChild(tag);
+
+    function startApp() {
+        const urls = document.querySelectorAll('.url');
+        const times = document.querySelectorAll('.time');
+        const screen = document.getElementById('player-screen');
+        
+        let validVideos = [];
+        urls.forEach((input, i) => {
+            const videoId = input.value.match(/(?:v=|\/)([0-9A-Za-z_-]{11})/)?.[1];
+            if (videoId) validVideos.push({id: videoId, index: i, start: parseInt(times[i].value) || 0});
+        });
+
+        if(validVideos.length === 0) return alert("有効なURLを入力してください");
+
+        document.getElementById('setup-screen').style.display = 'none';
+        screen.style.display = 'block';
+
+        const winH = window.innerHeight;
+        const winW = window.innerWidth;
+        const headerH = 24;
+        const boxH = winH / 3;
+        const boxW = (boxH - headerH) * (16/9);
+
+        // 中央ズーム
+        const zoomContainer = document.getElementById('center-zoom-container');
+        const zoomW = winW * 0.75; 
+        zoomContainer.style.width = `${zoomW}px`;
+        zoomContainer.style.top = `50%`;
+        zoomContainer.style.left = `${boxW}px`;
+        zoomContainer.style.transform = `translateY(-50%)`;
+
+        zoomPlayer = new YT.Player(`yt-player-zoom`, {
+            videoId: validVideos[0].id,
+            playerVars: { 'controls': 0, 'disablekb': 1, 'start': validVideos[0].start, 'rel': 0, 'mute': 1 },
+            events: { 'onReady': (e) => e.target.mute() }
+        });
+
+        validVideos.forEach((data, i) => {
+            const idx = data.index;
+            offsets[idx] = data.start;
+            let x = (i < 3) ? 0 : winW - boxW;
+            let y = (i < 3) ? i * boxH : (i - 3) * boxH;
+
+            const box = document.createElement('div');
+            box.className = 'video-box';
+            box.style.width = `${boxW}px`; 
+            box.style.height = `${boxH}px`;
+            box.style.transform = `translate(${x}px, ${y}px)`;
+            box.setAttribute('data-x', x); 
+            box.setAttribute('data-y', y);
+            
+            box.innerHTML = `
+                <div class="video-header">
+                    <span>#${idx+1}</span>
+                    <button class="mute-toggle ${idx===0 ? 'on' : ''}" id="mute-btn-${idx}" onclick="requestSoloAudio(${idx})">
+                        ${idx===0 ? 'AUDIO ON' : 'MUTE'}
+                    </button>
+                </div>
+                <div id="yt-player-${idx}"></div>
+            `;
+            screen.appendChild(box);
+
+            players[idx] = new YT.Player(`yt-player-${idx}`, {
+                videoId: data.id,
+                playerVars: { 'controls': 0, 'disablekb': 1, 'start': data.start, 'rel': 0 },
+                events: {
+                    'onReady': (e) => {
+                        e.target.setVolume(globalVolume);
+                        if(idx !== 0) e.target.mute();
+                    }
+                }
+            });
+            setupDraggable(box);
+        });
+
+        setupAutoHide();
+    }
+
+    function setupDraggable(target) {
+        interact(target).draggable({
+            allowFrom: '.video-header, .video-box', 
+            ignoreFrom: '.mute-toggle',
+            listeners: {
+                move(event) {
+                    const t = event.target;
+                    const x = (parseFloat(t.getAttribute('data-x')) || 0) + event.dx;
+                    const y = (parseFloat(t.getAttribute('data-y')) || 0) + event.dy;
+                    t.style.transform = `translate(${x}px, ${y}px)`;
+                    t.setAttribute('data-x', x);
+                    t.setAttribute('data-y', y);
+                }
+            }
+        }).on('down', (e) => {
+            document.querySelectorAll('.video-box').forEach(b => b.classList.remove('active'));
+            e.currentTarget.classList.add('active');
+        });
+    }
+
+    function togglePlay() {
+        const btn = document.getElementById('play-btn');
+        isPlaying = !isPlaying;
+        players.forEach(p => p && (isPlaying ? p.playVideo() : p.pauseVideo()));
+        if(zoomPlayer) isPlaying ? zoomPlayer.playVideo() : zoomPlayer.pauseVideo();
+        btn.innerText = isPlaying ? "一時停止" : "再生";
+        if(isPlaying) startTracking();
+    }
+
+    function setupAutoHide() {
+        const controls = document.getElementById('controls-bar');
+        const show = () => {
+            controls.classList.add('visible');
+            clearTimeout(hideTimeout);
+            hideTimeout = setTimeout(() => {
+                if (!controls.matches(':hover')) controls.classList.remove('visible');
+            }, 3000);
+        };
+        document.addEventListener('mousemove', show);
+    }
+
+    function requestSoloAudio(index) {
+        players.forEach((p, i) => {
+            if(!p || !p.mute) return;
+            const btn = document.getElementById(`mute-btn-${i}`);
+            if(i === index) {
+                p.unMute(); p.setVolume(globalVolume);
+                btn.innerText = "AUDIO ON"; btn.classList.add('on');
+            } else {
+                p.mute(); btn.innerText = "MUTE"; btn.classList.remove('on');
+            }
+        });
+    }
+
+    document.getElementById('volume-slider').addEventListener('input', (e) => {
+        globalVolume = e.target.value;
+        players.forEach(p => p && p.setVolume && p.setVolume(globalVolume));
+    });
+
+    document.getElementById('seekbar').addEventListener('input', (e) => {
+        const val = parseFloat(e.target.value);
+        players.forEach((p, i) => p && p.seekTo && p.seekTo(offsets[i] + val, true));
+        if(zoomPlayer) zoomPlayer.seekTo(offsets[0] + val, true);
+    });
+
+    function startTracking() {
+        const timer = setInterval(() => {
+            if (!isPlaying) { clearInterval(timer); return; }
+            if (players[0]?.getCurrentTime) {
+                const curr = players[0].getCurrentTime() - offsets[0];
+                const seek = document.getElementById('seekbar');
+                seek.max = players[0].getDuration() - offsets[0];
+                seek.value = curr;
+                const m = Math.floor(Math.max(0, curr) / 60);
+                const s = Math.floor(Math.max(0, curr) % 60);
+                document.getElementById('time-display').innerText = `${m}:${s < 10 ? '0' : ''}${s}`;
+            }
+        }, 500);
+    }
+		</script>
+</body>
+
+</html>
