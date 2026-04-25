@@ -5,6 +5,7 @@
 	<meta charset="UTF-8">
 	<title>ReplaySync</title>
 	<script src="https://cdn.jsdelivr.net/npm/interactjs/dist/interact.min.js"></script>
+	<script src="https://player.twitch.tv/js/embed/v1.js"></script>
 	<style>
 		body {
 			font-family: sans-serif;
@@ -13,6 +14,7 @@
 			margin: 0;
 			overflow: hidden;
 			height: 100vh;
+			width: 100vw;
 		}
 
 		#setup-screen {
@@ -23,7 +25,6 @@
 			border-radius: 12px;
 			position: relative;
 			z-index: 4000;
-			box-shadow: 0 0 30px rgba(0, 0, 0, 0.5);
 		}
 
 		.input-group {
@@ -49,43 +50,33 @@
 			position: relative;
 		}
 
-		/* 中央ズーム(ミニマップ)動画 */
 		#center-zoom-container {
 			position: absolute;
-			aspect-ratio: 16 / 9;
 			background: #000;
 			overflow: hidden;
 			z-index: 5;
-			border: 1px solid #333;
-			box-shadow: 0 0 50px rgba(0, 0, 0, 0.9);
+			top: 0;
+			height: 100vh;
 			pointer-events: none;
 		}
 
-		#center-zoom-container iframe {
-			width: 250%;
-			height: 250%;
-			position: absolute;
-			top: 0;
-			left: 0;
+		#yt-player-zoom {
+			position: absolute !important;
+			top: 0 !important;
+			left: 0 !important;
+			margin: 0 !important;
 		}
 
-		/* 5つの動画ボックス */
 		.video-box {
 			position: absolute;
 			background: #111;
-			border: 1px solid #333;
+			border: 2px solid #444;
 			box-sizing: border-box;
-			touch-action: none;
 			display: flex;
 			flex-direction: column;
 			z-index: 10;
 			overflow: hidden;
-			user-select: none;
-		}
-
-		.video-box.active {
-			border-color: #ff0000;
-			z-index: 500 !important;
+			touch-action: none;
 		}
 
 		.video-header {
@@ -97,6 +88,7 @@
 			font-size: 11px;
 			height: 24px;
 			cursor: move;
+			user-select: none;
 		}
 
 		.mute-toggle {
@@ -114,30 +106,31 @@
 			background: #cc0000;
 		}
 
-		.video-box iframe {
+		.player-wrapper {
 			width: 100%;
 			flex-grow: 1;
 			pointer-events: none;
-			border: none;
+			background: #000;
+			position: relative;
 		}
 
-		/* コントロールUI */
 		.controls {
 			position: fixed;
 			bottom: 20px;
 			left: 50%;
-			transform: translateX(-50%) translateY(100px);
+			transform: translateX(-50%) translateY(120px);
 			background: rgba(20, 20, 20, 0.95);
-			padding: 12px 24px;
+			padding: 15px 30px;
 			display: flex;
 			align-items: center;
-			gap: 20px;
+			gap: 25px;
 			z-index: 2000;
-			border-radius: 50px;
+			border-radius: 40px;
 			border: 1px solid #444;
 			backdrop-filter: blur(10px);
 			transition: transform 0.3s, opacity 0.3s;
 			opacity: 0;
+			box-shadow: 0 10px 40px rgba(0, 0, 0, 0.8);
 		}
 
 		.controls.visible {
@@ -149,20 +142,36 @@
 			display: flex;
 			flex-direction: column;
 			align-items: center;
-			gap: 2px;
+			gap: 4px;
 		}
 
 		#seekbar {
-			width: 350px;
+			width: 300px;
+			cursor: pointer;
 		}
 
-		#volume-slider {
-			width: 100px;
+		.slider-small {
+			width: 80px;
+			cursor: pointer;
+			height: 4px;
+		}
+
+		.slider-label {
+			font-size: 8px;
+			color: #888;
+			text-transform: uppercase;
+		}
+
+		.credit {
+			font-size: 10px;
+			color: #aaa;
+			margin-top: 4px;
+			display: block;
 		}
 
 		button {
 			cursor: pointer;
-			padding: 8px 16px;
+			padding: 8px 18px;
 			border-radius: 20px;
 			border: none;
 			font-weight: bold;
@@ -172,6 +181,7 @@
 
 		#play-btn {
 			background: #ff0000;
+			min-width: 80px;
 		}
 
 		.start-btn {
@@ -179,6 +189,9 @@
 			border-radius: 4px;
 			width: 100%;
 			margin-top: 15px;
+			font-size: 16px;
+			color: white;
+			cursor: pointer;
 		}
 	</style>
 </head>
@@ -186,7 +199,7 @@
 <body>
 
 	<div id="setup-screen">
-		<h3 style="margin-top:0;">動画同期設定</h3>
+		<h1 style="text-align:center; margin-top:0; color:#ff0000;">ReplaySync</h1>
 		<div id="inputs"></div>
 		<button class="start-btn" onclick="startApp()">プレイヤーを表示</button>
 	</div>
@@ -199,202 +212,241 @@
 			<button id="play-btn" onclick="togglePlay()">再生</button>
 			<div class="control-group">
 				<input type="range" id="seekbar" value="0" step="0.1">
-				<span id="time-display" style="font-size:11px; font-family: monospace; color: #aaa;">00:00</span>
+				<div style="text-align:center;">
+					<span id="time-display" style="font-size:12px; font-family: monospace; color: #eee;">00:00</span><br>
+					<span class="credit">製作者: @naginize</span>
+				</div>
 			</div>
-			<div class="control-group">
-				<label style="font-size:8px; color:#888;">VOL</label>
-				<input type="range" id="volume-slider" min="0" max="100" value="50">
-        </div>
-				<button onclick="backToSetup()" style="font-size: 11px;">設定に戻る</button>
+			<div style="display: flex; flex-direction: column; gap: 8px;">
+				<div class="control-group">
+					<label class="slider-label">VOL</label><input type="range" id="volume-slider" class="slider-small" min="0" max="100" value="50"></div>
+					<div class="control-group">
+						<label class="slider-label">ZOOM</label><input type="range" id="zoom-slider" class="slider-small" min="100" max="500" value="240"></div>
+					</div>
+					<button onclick="window.location.reload()" style="font-size: 11px; background: transparent; border: 1px solid #555;">戻る</button>
+				</div>
 			</div>
-		</div>
 
-		<script>
-			let players = [];
+			<script>
+				let players = []; 
     let zoomPlayer = null;
-    let offsets = [];
+    let videoData = []; 
     let isPlaying = false;
     let globalVolume = 50;
     let hideTimeout;
 
-    // 設定に戻る関数
-    function backToSetup() {
-        if(confirm("設定画面に戻りますか？現在の配置はリセットされます。")) {
-            window.location.reload();
-        }
-    }
-
     const inputs = document.getElementById('inputs');
     for (let i = 0; i < 5; i++) {
-        inputs.innerHTML += `
-            <div class="input-group">
-                <span style="font-size:12px;">動画${i+1}</span>
-                <input type="text" class="url" placeholder="URLを入力" value="">
-                <input type="number" class="time" value="0">
-            </div>`;
+        inputs.innerHTML += `<div class="input-group">
+            <span style="font-size:12px; color:#aaa;">動画${i+1}</span>
+            <input type="text" class="url" id="url-input-${i}" placeholder="URL(時間指定可)">
+            <input type="number" class="time" placeholder="+秒" value="0">
+        </div>`;
     }
 
     const tag = document.createElement('script');
     tag.src = "https://www.youtube.com/iframe_api";
     document.head.appendChild(tag);
 
-    function startApp() {
-        const urls = document.querySelectorAll('.url');
-        const times = document.querySelectorAll('.time');
-        const screen = document.getElementById('player-screen');
-        
-        let validVideos = [];
-        urls.forEach((input, i) => {
-            const videoId = input.value.match(/(?:v=|\/)([0-9A-Za-z_-]{11})/)?.[1];
-            if (videoId) validVideos.push({id: videoId, index: i, start: parseInt(times[i].value) || 0});
-        });
-
-        if(validVideos.length === 0) return alert("有効なURLを入力してください");
-
-        document.getElementById('setup-screen').style.display = 'none';
-        screen.style.display = 'block';
-
-        const winH = window.innerHeight;
-        const winW = window.innerWidth;
-        const headerH = 24;
-        const boxH = winH / 3;
-        const boxW = (boxH - headerH) * (16/9);
-
-        // 中央ズーム
-        const zoomContainer = document.getElementById('center-zoom-container');
-        const zoomW = winW * 0.75; 
-        zoomContainer.style.width = `${zoomW}px`;
-        zoomContainer.style.top = `50%`;
-        zoomContainer.style.left = `${boxW}px`;
-        zoomContainer.style.transform = `translateY(-50%)`;
-
-        zoomPlayer = new YT.Player(`yt-player-zoom`, {
-            videoId: validVideos[0].id,
-            playerVars: { 'controls': 0, 'disablekb': 1, 'start': validVideos[0].start, 'rel': 0, 'mute': 1 },
-            events: { 'onReady': (e) => e.target.mute() }
-        });
-
-        validVideos.forEach((data, i) => {
-            const idx = data.index;
-            offsets[idx] = data.start;
-            let x = (i < 3) ? 0 : winW - boxW;
-            let y = (i < 3) ? i * boxH : (i - 3) * boxH;
-
-            const box = document.createElement('div');
-            box.className = 'video-box';
-            box.style.width = `${boxW}px`; 
-            box.style.height = `${boxH}px`;
-            box.style.transform = `translate(${x}px, ${y}px)`;
-            box.setAttribute('data-x', x); 
-            box.setAttribute('data-y', y);
-            
-            box.innerHTML = `
-                <div class="video-header">
-                    <span>#${idx+1}</span>
-                    <button class="mute-toggle ${idx===0 ? 'on' : ''}" id="mute-btn-${idx}" onclick="requestSoloAudio(${idx})">
-                        ${idx===0 ? 'AUDIO ON' : 'MUTE'}
-                    </button>
-                </div>
-                <div id="yt-player-${idx}"></div>
-            `;
-            screen.appendChild(box);
-
-            players[idx] = new YT.Player(`yt-player-${idx}`, {
-                videoId: data.id,
-                playerVars: { 'controls': 0, 'disablekb': 1, 'start': data.start, 'rel': 0 },
-                events: {
-                    'onReady': (e) => {
-                        e.target.setVolume(globalVolume);
-                        if(idx !== 0) e.target.mute();
-                    }
-                }
-            });
-            setupDraggable(box);
-        });
-
-        setupAutoHide();
+    function parseTimestamp(url) {
+        let totalSeconds = 0;
+        const tMatch = url.match(/[?&]t=([^&]+)/);
+        if (!tMatch) return 0;
+        const t = tMatch[1];
+        const h = t.match(/(\d+)h/), m = t.match(/(\d+)m/), s = t.match(/(\d+)s/);
+        if (h) totalSeconds += parseInt(h[1]) * 3600;
+        if (m) totalSeconds += parseInt(m[1]) * 60;
+        if (s) totalSeconds += parseInt(s[1]);
+        if (!h && !m && !s && /^\d+$/.test(t)) totalSeconds = parseInt(t);
+        return totalSeconds;
     }
 
-    function setupDraggable(target) {
-        interact(target).draggable({
-            allowFrom: '.video-header, .video-box', 
-            ignoreFrom: '.mute-toggle',
-            listeners: {
-                move(event) {
-                    const t = event.target;
-                    const x = (parseFloat(t.getAttribute('data-x')) || 0) + event.dx;
-                    const y = (parseFloat(t.getAttribute('data-y')) || 0) + event.dy;
-                    t.style.transform = `translate(${x}px, ${y}px)`;
-                    t.setAttribute('data-x', x);
-                    t.setAttribute('data-y', y);
-                }
+    function getProvider(url) {
+        if (url.includes('twitch.tv')) return 'twitch';
+        if (url.includes('youtube.com') || url.includes('youtu.be')) return 'youtube';
+        return null;
+    }
+
+    function createSyncPlayer(containerId, data, isMuted) {
+        const { provider, id, start } = data;
+        let pObj = { provider };
+        if (provider === 'youtube') {
+            pObj.ref = new YT.Player(containerId, {
+                videoId: id, width: '100%', height: '100%',
+                playerVars: { 'controls': 0, 'start': start, 'rel': 0, 'mute': isMuted ? 1 : 0, 'disablekb': 1, 'iv_load_policy': 3, 'modestbranding': 1 },
+                events: { 'onReady': (e) => { e.target.pauseVideo(); } }
+            });
+            pObj.play = () => pObj.ref.playVideo && pObj.ref.playVideo();
+            pObj.pause = () => pObj.ref.pauseVideo && pObj.ref.pauseVideo();
+            pObj.seek = (s) => pObj.ref.seekTo && pObj.ref.seekTo(s, true);
+            pObj.setVol = (v) => pObj.ref.setVolume && pObj.ref.setVolume(v);
+            pObj.mute = (m) => pObj.ref.mute && (m ? pObj.ref.mute() : pObj.ref.unMute());
+            pObj.getTime = () => (pObj.ref.getCurrentTime ? pObj.ref.getCurrentTime() : 0);
+            pObj.getDur = () => (pObj.ref.getDuration ? pObj.ref.getDuration() : 0);
+        } else {
+            pObj.ref = new Twitch.Player(containerId, {
+                video: id, width: "100%", height: "100%", autoplay: false, time: start + "s", muted: isMuted, controls: false
+            });
+            pObj.play = () => pObj.ref.play();
+            pObj.pause = () => pObj.ref.pause();
+            pObj.seek = (s) => pObj.ref.seek(s);
+            pObj.setVol = (v) => pObj.ref.setVolume(v / 100);
+            pObj.mute = (m) => pObj.ref.setMuted(m);
+            pObj.getTime = () => pObj.ref.getCurrentTime();
+            pObj.getDur = () => pObj.ref.getDuration();
+        }
+        return pObj;
+    }
+
+    function applyZoom(val) {
+        const target = document.getElementById('yt-player-zoom');
+        if (target) {
+            target.style.width = `${val}vw`;
+            target.style.height = `${(val / 16) * 9}vw`;
+        }
+    }
+
+    function startApp() {
+        const urls = document.querySelectorAll('.url'), times = document.querySelectorAll('.time');
+        const firstUrl = urls[0].value.trim();
+        if (getProvider(firstUrl) === 'twitch') {
+            alert("動画1にはYouTubeの動画URLを入力してください");
+            return;
+        }
+        urls.forEach((input, i) => {
+            const urlVal = input.value.trim(), provider = getProvider(urlVal);
+            let id = "";
+            if (provider === 'youtube') id = urlVal.match(/(?:v=|\/)([0-9A-Za-z_-]{11})/)?.[1];
+            else if (provider === 'twitch') id = urlVal.match(/videos\/(\d+)/)?.[1];
+            if (id) {
+                const urlTimestamp = parseTimestamp(urlVal);
+                const manualExtra = parseInt(times[i].value) || 0;
+                videoData.push({ provider, id, start: urlTimestamp + manualExtra, index: i });
             }
-        }).on('down', (e) => {
-            document.querySelectorAll('.video-box').forEach(b => b.classList.remove('active'));
-            e.currentTarget.classList.add('active');
+        });
+        if (videoData.length === 0) return alert("URLを入力してください");
+        document.getElementById('setup-screen').style.display = 'none';
+        document.getElementById('player-screen').style.display = 'block';
+        const winW = window.innerWidth, boxH = window.innerHeight / 3, boxW = (boxH - 24) * (16/9);
+        const zc = document.getElementById('center-zoom-container');
+        zc.style.left = `${boxW}px`; zc.style.width = `${winW - (boxW * 2)}px`;
+        videoData.forEach((data, i) => {
+            const idx = data.index;
+            let x = (i < 3) ? 0 : winW - boxW, y = (i < 3) ? i * boxH : (i - 3) * boxH;
+            const box = document.createElement('div');
+            box.className = 'video-box';
+            box.style.width = `${boxW}px`; box.style.height = `${boxH}px`;
+            box.style.transform = `translate(${x}px, ${y}px)`;
+            box.dataset.x = x; box.dataset.y = y;
+            box.innerHTML = `<div class="video-header"><span>#${idx+1}</span><button class="mute-toggle ${idx===0?'on':''}" id="mute-btn-${idx}" onclick="requestSoloAudio(${idx})">${idx===0?'AUDIO ON':'MUTE'}</button></div><div class="player-wrapper" id="p-con-${idx}"></div>`;
+            document.getElementById('player-screen').appendChild(box);
+            players[idx] = createSyncPlayer(`p-con-${idx}`, data, idx !== 0);
+            setupInteract(box);
+        });
+        zoomPlayer = createSyncPlayer('yt-player-zoom', videoData[0], true);
+        applyZoom(240);
+        setupAutoHide();
+        setupKeyListeners();
+    }
+
+    function setupInteract(el) {
+        interact(el).draggable({
+            allowFrom: '.video-header',
+            onmove: (e) => {
+                const t = e.target;
+                const x = (parseFloat(t.dataset.x) || 0) + e.dx, y = (parseFloat(t.dataset.y) || 0) + e.dy;
+                t.style.transform = `translate(${x}px, ${y}px)`;
+                t.dataset.x = x; t.dataset.y = y;
+            }
+        }).resizable({
+            edges: { right: true, bottom: true, left: true, top: false },
+            modifiers: [interact.modifiers.aspectRatio({ ratio: 'preserve' })],
+            onmove: (e) => {
+                const t = e.target;
+                let x = (parseFloat(t.dataset.x) || 0), y = (parseFloat(t.dataset.y) || 0);
+                t.style.width = e.rect.width + 'px'; t.style.height = e.rect.height + 'px';
+                x += e.deltaRect.left; y += e.deltaRect.top;
+                t.style.transform = `translate(${x}px, ${y}px)`;
+                t.dataset.x = x; t.dataset.y = y;
+            }
         });
     }
 
     function togglePlay() {
-        const btn = document.getElementById('play-btn');
         isPlaying = !isPlaying;
-        players.forEach(p => p && (isPlaying ? p.playVideo() : p.pauseVideo()));
-        if(zoomPlayer) isPlaying ? zoomPlayer.playVideo() : zoomPlayer.pauseVideo();
-        btn.innerText = isPlaying ? "一時停止" : "再生";
+        players.forEach(p => p && (isPlaying ? p.play() : p.pause()));
+        if(zoomPlayer) isPlaying ? zoomPlayer.play() : zoomPlayer.pause();
+        document.getElementById('play-btn').innerText = isPlaying ? "一時停止" : "再生";
         if(isPlaying) startTracking();
-    }
-
-    function setupAutoHide() {
-        const controls = document.getElementById('controls-bar');
-        const show = () => {
-            controls.classList.add('visible');
-            clearTimeout(hideTimeout);
-            hideTimeout = setTimeout(() => {
-                if (!controls.matches(':hover')) controls.classList.remove('visible');
-            }, 3000);
-        };
-        document.addEventListener('mousemove', show);
     }
 
     function requestSoloAudio(index) {
         players.forEach((p, i) => {
-            if(!p || !p.mute) return;
+            if(!p) return;
             const btn = document.getElementById(`mute-btn-${i}`);
-            if(i === index) {
-                p.unMute(); p.setVolume(globalVolume);
-                btn.innerText = "AUDIO ON"; btn.classList.add('on');
-            } else {
-                p.mute(); btn.innerText = "MUTE"; btn.classList.remove('on');
-            }
+            if(i === index) { p.mute(false); p.setVol(globalVolume); btn.innerText = "AUDIO ON"; btn.classList.add('on'); }
+            else { p.mute(true); btn.innerText = "MUTE"; btn.classList.remove('on'); }
         });
+    }
+
+    function seekAll(time) {
+        players.forEach((p, i) => {
+            if(!p) return;
+            const offset = videoData.find(d => d.index === i).start - videoData[0].start;
+            p.seek(time + offset);
+        });
+        if(zoomPlayer) zoomPlayer.seek(time);
     }
 
     document.getElementById('volume-slider').addEventListener('input', (e) => {
         globalVolume = e.target.value;
-        players.forEach(p => p && p.setVolume && p.setVolume(globalVolume));
+        players.forEach(p => p && p.setVol(globalVolume));
     });
-
-    document.getElementById('seekbar').addEventListener('input', (e) => {
-        const val = parseFloat(e.target.value);
-        players.forEach((p, i) => p && p.seekTo && p.seekTo(offsets[i] + val, true));
-        if(zoomPlayer) zoomPlayer.seekTo(offsets[0] + val, true);
-    });
+    document.getElementById('zoom-slider').addEventListener('input', (e) => applyZoom(e.target.value));
+    document.getElementById('seekbar').addEventListener('input', (e) => seekAll(videoData[0].start + parseFloat(e.target.value)));
 
     function startTracking() {
         const timer = setInterval(() => {
             if (!isPlaying) { clearInterval(timer); return; }
-            if (players[0]?.getCurrentTime) {
-                const curr = players[0].getCurrentTime() - offsets[0];
+            const master = players[videoData[0].index];
+            if (master && master.getTime) {
+                const curr = master.getTime() - videoData[0].start;
                 const seek = document.getElementById('seekbar');
-                seek.max = players[0].getDuration() - offsets[0];
+                seek.max = (master.getDur() || 0) - videoData[0].start;
                 seek.value = curr;
-                const m = Math.floor(Math.max(0, curr) / 60);
-                const s = Math.floor(Math.max(0, curr) % 60);
+                const m = Math.floor(Math.max(0, curr) / 60), s = Math.floor(Math.max(0, curr) % 60);
                 document.getElementById('time-display').innerText = `${m}:${s < 10 ? '0' : ''}${s}`;
             }
         }, 500);
     }
-		</script>
+
+    function setupKeyListeners() {
+        window.addEventListener('keydown', (e) => {
+            if (e.target.tagName === 'INPUT' && e.target.type !== 'range') return;
+            const master = players[videoData[0].index];
+            if (!master) return;
+            if (e.key === "ArrowRight") {
+                e.preventDefault();
+                seekAll(master.getTime() + 10);
+            } else if (e.key === "ArrowLeft") {
+                e.preventDefault();
+                seekAll(master.getTime() - 10);
+            } else if (e.code === "Space") {
+                e.preventDefault();
+                togglePlay();
+            }
+        });
+    }
+
+    function setupAutoHide() {
+        const controls = document.getElementById('controls-bar');
+        document.addEventListener('mousemove', () => {
+            controls.classList.add('visible');
+            clearTimeout(hideTimeout);
+            hideTimeout = setTimeout(() => { if (!controls.matches(':hover')) controls.classList.remove('visible'); }, 3000);
+        });
+    }
+			</script>
 </body>
 
 </html>
